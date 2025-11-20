@@ -2,8 +2,8 @@ import streamlit as st
 import chromadb
 import time
 from langchain_community.vectorstores import Chroma
-# from langchain_ollama import ChatOllama
-from langchain_openai import ChatOpenAI
+from langchain_ollama import ChatOllama
+# from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
 from dotenv import load_dotenv
@@ -16,15 +16,14 @@ retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
 # --- Initialize local LLM ---
 # Use a smaller model like "phi3:mini" or "qwen2.5:0.5b" for faster responses
-# llm = ChatOllama(model="smollm2")
 # llm = ChatOllama(model="phi3:mini")
-# llm = ChatOllama(model="steamdj/llama3.1-cpu-only") 
-# llm = ChatOllama(model="qwen2.5:0.5b")
-llm = ChatOpenAI(
-    # model="gpt-4o-mini",   # or "gpt-4o" / "gpt-3.5-turbo"
-    model="gpt-4.1-nano",   
-    temperature=0,
-)
+llm = ChatOllama(model="llama3.1:8b")
+
+# llm = ChatOpenAI(
+#     # model="gpt-4o-mini",   # or "gpt-4o" / "gpt-3.5-turbo"
+#     model="gpt-4.1-nano",   
+#     temperature=0,
+# )``
 
 # --- Streamlit page setup ---
 st.set_page_config(page_title="DevSite Assistant", page_icon="🤖")
