@@ -1,6 +1,9 @@
+import argparse
+import chromadb
 import os
 import re
-import chromadb
+import shutil
+
 from langchain_community.document_loaders import DirectoryLoader, UnstructuredMarkdownLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -8,12 +11,17 @@ from langchain_community.vectorstores import Chroma
 
 # --- 1. Load all MDX docs ---
 print("📚 Loading MDX files...")
+parser = argparse.ArgumentParser(description="Build Chroma index from MDX files")
+parser.add_argument("--path", type=str, default="./data", help="Path to directory containing MDX files")
+args = parser.parse_args()
+
 loader = DirectoryLoader(
-    path="./data",
+    path=args.path,
     glob="**/*.mdx",
     loader_cls=UnstructuredMarkdownLoader,
     show_progress=True
 )
+print(f"📂 Using docs path: {args.path}")
 docs = loader.load()
 print(f"✅ Loaded {len(docs)} documents")
 
@@ -48,7 +56,6 @@ print("💾 Building Chroma vectorstore...")
 persist_dir = "./chroma_db"
 if os.path.exists(persist_dir):
     print("⚠️ Removing old Chroma database...")
-    import shutil
     shutil.rmtree(persist_dir)
 
 vectorstore = Chroma.from_documents(
