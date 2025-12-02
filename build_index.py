@@ -19,10 +19,16 @@ loader = DirectoryLoader(
     path=args.path,
     glob="**/*.mdx",
     loader_cls=UnstructuredMarkdownLoader,
-    show_progress=True
+    show_progress=True,
+    silent_errors=True
 )
 print(f"📂 Using docs path: {args.path}")
-docs = loader.load()
+docs = []
+try:
+    docs = loader.load()
+except UnicodeDecodeError:
+    # Handle or skip problematic files
+    pass
 print(f"✅ Loaded {len(docs)} documents")
 
 # --- 2. Clean up MDX content (remove JSX/HTML tags safely) ---

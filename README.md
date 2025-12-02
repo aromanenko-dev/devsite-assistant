@@ -80,8 +80,13 @@ Run the indexing script to process and embed your documentation:
 python build_index.py
 ```
 
+**Index from a custom directory:**
+```bash
+python build_index.py --path /path/to/your/docs
+```
+
 **What this does:**
-- Loads all `.mdx` files from `./data/`
+- Loads all `.mdx` files from `./data/` (or custom path with `--path`)
 - Strips JSX/React components
 - Splits content into 800-character chunks
 - Creates embeddings using `BAAI/bge-small-en` model
@@ -143,14 +148,37 @@ llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 **Number of chunks retrieved per query:**
 ```python
-# In app.py, line 19
-retriever = vectorstore.as_retriever(search_kwargs={"k": 5})  # Change 5 to desired number
+# In app.py, line 18
+retriever = vectorstore.as_retriever(search_kwargs={"k": 8})  # Currently set to 8, increase for more context
+```
+
+**Maximum characters per document chunk:**
+```python
+# In app.py, line 43
+def retrieve_context(query, max_tokens_per_doc=3000):  # Currently set to 3000
 ```
 
 **Chunk size during indexing:**
 ```python
-# In build_index.py, line 29
+# In build_index.py
 splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+```
+
+### Improving Answer Quality
+
+The system uses a refined prompt that:
+- **Enforces grounding** - Answers ONLY using documented information
+- **Allows inferences** - Can make reasonable conclusions from context
+- **Encourages citations** - Asks model to reference specific documentation
+- **Retrieves more context** - 8 chunks × 3000 chars for comprehensive information
+
+**Custom documentation path:**
+```bash
+# Index documentation from a different directory
+python build_index.py --path /path/to/docs
+
+# Use default ./data/ directory
+python build_index.py
 ```
 
 ## Project Structure
@@ -177,12 +205,17 @@ devsite-assistant/
 
 2. **Query Pipeline** (`app.py`):
    ```
-   User question → Retrieve top 5 chunks → Build context → LLM → Streamed answer
+   User question → Retrieve 8 chunks (3000 chars each) → Build context → LLM → Streamed answer
    ```
 
 3. **Conversational Memory**:
    - Last 3 exchanges stored in session state
    - Enables follow-up questions: "tell me more", "what about X?"
+
+4. **Inference Statistics** (displayed after each query):
+   - Token count and generation speed (tokens/second)
+   - Total inference time and time to first token (TTFT)
+   - Active model name dynamically shown
 
 ## Troubleshooting
 
@@ -213,9 +246,10 @@ python build_index.py  # Build the index first
 
 ### Poor answer quality
 1. Check what's being retrieved: run `explore_chroma.py`
-2. Increase retrieval count in `app.py`: `search_kwargs={"k": 10}`
-3. View context sent to LLM in terminal output
-4. Ensure documentation files are well-structured
+2. Increase retrieval count in `app.py`: `search_kwargs={"k": 12}` (default is 8)
+3. Increase context window: set `max_tokens_per_doc=4000` (default is 3000)
+4. View context sent to LLM in terminal output
+5. Ensure documentation files are well-structured
 
 ## Limitations
 
