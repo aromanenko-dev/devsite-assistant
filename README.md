@@ -5,7 +5,7 @@ A local, privacy-focused RAG (Retrieval-Augmented Generation) chatbot for your i
 ## Overview
 
 This tool indexes your MDX documentation files and provides an AI-powered Q&A interface that:
-- ✅ Runs completely locally (optional cloud LLM via OpenAI API)
+- ✅ Runs completely locally with Ollama (optional cloud LLM via OpenAI API)
 - ✅ Preserves privacy - your docs never leave your machine
 - ✅ Provides source attribution for every answer
 - ✅ Maintains conversational context across multiple questions
@@ -16,16 +16,18 @@ This tool indexes your MDX documentation files and provides an AI-powered Q&A in
 ### Required
 - **Python 3.8+** (tested with Python 3.11)
 - **pip** (Python package manager)
-
-### Optional (for local LLM)
-- **Ollama** - For running local language models
+- **Ollama** - For running the local LLM
   ```bash
   brew install ollama  # macOS
-  # Then pull a model:
+  
+  # Start Ollama service
+  ollama serve
+  
+  # Pull the required model (in a new terminal)
   ollama pull llama3.1:8b
   ```
 
-### Optional (for cloud LLM)
+### Optional (for cloud LLM instead of Ollama)
 - **OpenAI API Key** - For using GPT models
   - Sign up at https://platform.openai.com
   - Create an API key from your dashboard
@@ -51,13 +53,14 @@ source .venv/bin/activate  # macOS/Linux
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment (if using OpenAI)
-Create a `.env` file in the project root:
+### 4. Start Ollama
+Ensure Ollama is running before launching the app:
 ```bash
-echo "OPENAI_API_KEY=sk-your-api-key-here" > .env
+# In a separate terminal
+ollama serve
 ```
 
-**Note:** If using Ollama (local LLM), skip this step and modify `app.py` to uncomment the Ollama configuration.
+**Note:** If using OpenAI instead, create a `.env` file with your API key and modify `app.py` to uncomment the OpenAI configuration and comment out Ollama.
 
 ## Usage
 
@@ -117,18 +120,23 @@ This debugging tool lets you:
 
 ### Switching Between LLM Providers
 
-**Using OpenAI (default):**
+**Using Ollama (default - fully local):**
 ```python
-# In app.py (lines 6-7, 21-25)
-from langchain_openai import ChatOpenAI
-llm = ChatOpenAI(model="gpt-4.1-nano", temperature=0)
-```
-
-**Using Ollama (local):**
-```python
-# In app.py, uncomment and modify:
+# In app.py (current configuration)
 from langchain_ollama import ChatOllama
 llm = ChatOllama(model="llama3.1:8b")
+
+# Other Ollama models you can try:
+# llm = ChatOllama(model="phi3:mini")     # Faster, smaller
+# llm = ChatOllama(model="qwen2.5:0.5b")  # Very fast, minimal
+```
+
+**Using OpenAI (cloud - requires API key):**
+```python
+# In app.py, comment out Ollama and uncomment:
+from langchain_openai import ChatOpenAI
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+# Also create .env with: OPENAI_API_KEY=sk-...
 ```
 
 ### Adjusting Retrieval Parameters
@@ -189,9 +197,14 @@ pip install -r requirements.txt
 python build_index.py  # Build the index first
 ```
 
-### "OpenAI API key not found"
+### "Connection refused" or "Ollama not responding"
+- Make sure Ollama is running: `ollama serve`
+- Verify the model is installed: `ollama list`
+- Pull the model if needed: `ollama pull llama3.1:8b`
+
+### "OpenAI API key not found" (if using OpenAI)
 - Create `.env` file with `OPENAI_API_KEY=sk-...`
-- Or switch to Ollama (see Configuration section)
+- Make sure you uncommented the OpenAI imports in `app.py`
 
 ### Chat history disappears
 - History is stored in browser session only
