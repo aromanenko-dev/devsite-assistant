@@ -9,27 +9,41 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
-# --- 1. Load all MDX docs ---
-print("📚 Loading MDX files...")
-parser = argparse.ArgumentParser(description="Build Chroma index from MDX files")
-parser.add_argument("--path", type=str, default="./data", help="Path to directory containing MDX files")
+# --- 1. Load all MDX/MD docs ---
+print("📚 Loading documentation files...")
+parser = argparse.ArgumentParser(description="Build Chroma index from Markdown/MDX files")
+parser.add_argument(
+    "--path", 
+    type=str, 
+    nargs="+",
+    default=["./data"], 
+    help="Path(s) to directory containing Markdown/MDX files (supports multiple paths)"
+)
 args = parser.parse_args()
 
-loader = DirectoryLoader(
-    path=args.path,
-    glob="**/*.mdx",
-    loader_cls=UnstructuredMarkdownLoader,
-    show_progress=True,
-    silent_errors=True
-)
-print(f"📂 Using docs path: {args.path}")
-docs = []
-try:
-    docs = loader.load()
-except UnicodeDecodeError:
-    # Handle or skip problematic files
-    pass
-print(f"✅ Loaded {len(docs)} documents")
+# Ensure paths is always a list
+paths = args.path if isinstance(args.path, list) else [args.path]
+
+all_docs = []
+for path in paths:
+    print(f"📂 Loading from: {path}")
+    for glob_pattern in ["**/*.mdx", "**/*.md"]:
+        loader = DirectoryLoader(
+            path=path,
+            glob=glob_pattern,
+            loader_cls=UnstructuredMarkdownLoader,
+            show_progress=True,
+            silent_errors=True
+        )
+        try:
+            docs = loader.load()
+            all_docs.extend(docs)
+            print(f"✅ Loaded {len(docs)} documents from {path}")
+        except Exception as e:
+            print(f"⚠️ Error loading from {path}: {e}")
+            continue
+
+print(f"📚 Total documents loaded: {len(all_docs)}")
 
 # --- 2. Clean up MDX content (remove JSX/HTML tags safely) ---
 def clean_mdx(text):
@@ -38,7 +52,7 @@ def clean_mdx(text):
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-for d in docs:
+for d in all_docs:
     d.page_content = clean_mdx(d.page_content)
     # Ensure file path metadata
     d.metadata["source"] = d.metadata.get("source", d.metadata.get("file_path", "unknown"))
@@ -50,7 +64,7 @@ splitter = RecursiveCharacterTextSplitter(
     chunk_overlap=100,
     separators=["\n\n", "\n", ".", "!", "?", " "],
 )
-chunks = splitter.split_documents(docs)
+chunks = splitter.split_documents(all_docs)
 print(f"✅ Created {len(chunks)} text chunks")
 
 # --- 4. Create embeddings ---

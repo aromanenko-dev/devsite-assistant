@@ -2,3 +2,4 @@
 .venv/
 chroma_db/
 data/*
+chroma_db_code/
