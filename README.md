@@ -19,8 +19,10 @@ This tool indexes your documentation and source code, then uses intelligent rout
 ### Multi-Source Intelligence
 - **📚 Documentation Search** - Find information in your docs, guides, and wikis
 - **💻 Code Search** - Search and understand your source code (Python, JavaScript, Java, Go, Rust, C++, etc.)
-- **🧭 Intelligent Routing** - Automatically chooses the best source(s) for each question
+- **🧭 Intelligent Routing with Fallback** - Automatically chooses the best source(s), with automatic fallback if primary source insufficient
+- **✅ Quality-Aware Retrieval** - Checks if results are sufficient and falls back to other sources if needed
 - **🔗 Combined Context** - Answers that reference both documentation and code examples
+- **🛡️ Anti-Hallucination** - Deterministic LLM (temperature=0) with strict grounding rules and citation enforcement
 
 ### Developer-Friendly
 - **Multiple Paths** - Index docs and code from different locations
@@ -38,8 +40,10 @@ This tool indexes your documentation and source code, then uses intelligent rout
   # Start Ollama service
   ollama serve
   
-  # Pull the required model (in a new terminal)
-  ollama pull llama3.1:8b
+  # Pull a recommended model (in a new terminal)
+  ollama pull mistral  # Recommended for M2/M3 MacBooks
+  # or: ollama pull llama3.1:8b
+  # or: ollama pull phi (for fastest/lightest)
   ```
 
 ### Optional (for cloud LLM instead of Ollama)
@@ -105,17 +109,14 @@ ln -s /path/to/another/repo ./data/other-docs
 
 Run the indexing script to process and embed your documentation:
 ```bash
-python build_index.py
-```
+# From root directory
+python src/build_index.py
 
-**Index from a custom directory:**
-```bash
-python build_index.py --path /path/to/your/docs
-```
+# Or index from a custom directory:
+python src/build_index.py --path /path/to/your/docs
 
-**Index from multiple directories:**
-```bash
-python build_index.py --path ./data /path/to/github/repo /path/to/another/repo
+# Index from multiple directories:
+python src/build_index.py --path ./data /path/to/github/repo /path/to/another/repo
 ```
 
 **What this does:**
@@ -129,10 +130,71 @@ python build_index.py --path ./data /path/to/github/repo /path/to/another/repo
 
 ⚠️ **Warning:** This script deletes and rebuilds the entire index each time. No incremental updates.
 
-### Step 3: Launch the Chatbot
+### Step 3: Build Code Index (Optional)
+
+To enable code search across your repositories:
 
 ```bash
-streamlit run app.py
+# Index source code
+python src/code_search_agent.py --path /path/to/repo
+
+# Index multiple repositories
+python src/code_search_agent.py --path /path/to/repo1 /path/to/repo2
+```
+
+**What this does:**
+- Loads code files from specified paths (20+ language support)
+- **Extracts semantic structure** (functions, classes, methods, constructors)
+- **For Java/XML:** Creates comprehensive metadata chunks with:
+  - Complete method lists with signatures and return types
+  - Constructor information with parameters
+  - Inheritance hierarchy (extends/implements)
+  - Element structure and attributes
+- Splits into 1500-character chunks (2000+ for Java to preserve method context)
+- Creates embeddings and stores in `./chroma_db_code/`
+- Supports efficient querying for: "What methods does X have?", "Show me constructors"
+
+**First run:** Downloads embedding model if needed.
+
+**Enhanced Code Indexing:**
+The indexer creates multiple chunk types for optimal retrieval:
+1. **Semantic Summary** - Overview of file structure
+2. **Element Metadata** (Java classes, XML elements) - Complete method/element listings
+3. **Code Chunks** - Actual source code for implementation details
+
+Example Java class indexing:
+```
+Java Class: SolacePubSubManager
+Constructors (2):
+  - SolacePubSubManager(brokerURL)
+  - SolacePubSubManager(brokerURL, username, password)
+Methods (6):
+  - initialize(brokerURL) -> void
+  - publish(topic, message) -> void
+  - subscribe(topic) -> void
+  - disconnect() -> void
+  - isConnected() -> boolean
+  - getStatus() -> String
+```
+
+See [ENHANCED_INDEXER_IMPROVEMENTS.md](./ENHANCED_INDEXER_IMPROVEMENTS.md) for detailed technical documentation.
+
+### Step 4: Launch the Chatbot
+
+```bash
+# Default model (gpt-oss:20b)
+streamlit run src/app.py
+
+# With Mistral (recommended for M2/M3 - faster & better quality)
+streamlit run src/app.py -- --model mistral
+
+# With other models
+streamlit run src/app.py -- --model phi          # Fastest
+streamlit run src/app.py -- --model llama3.1:8b  # Default quality
+
+# Using environment variable
+export DEVSITE_MODEL=mistral
+streamlit run src/app.py
 ```
 
 The app will open in your browser at `http://localhost:8501`
@@ -146,13 +208,8 @@ The app will open in your browser at `http://localhost:8501`
 
 To inspect what's been indexed or test semantic search:
 ```bash
-streamlit run explore_chroma.py
+streamlit run src/explore_chroma.py
 ```
-
-This debugging tool lets you:
-- View all indexed documents
-- Test semantic search queries
-- Check metadata and chunk content
 
 ## Example Workflows
 
@@ -161,6 +218,8 @@ This debugging tool lets you:
 User: "How do I set up the project?"
        ↓
 Router: DOCS
+       ↓
+Quality Check: SUFFICIENT
        ↓
 Retrieves: setup guide, prerequisites
        ↓
@@ -173,23 +232,60 @@ User: "What does the authenticate() function do?"
        ↓
 Router: CODE
        ↓
+Quality Check: SUFFICIENT
+       ↓
 Retrieves: authenticate() implementation and context
        ↓
 Response: Shows the function with explanation
 ```
 
-### Workflow 3: Integration Question (Routes to BOTH)
+### Workflow 3: Integration Question with Fallback (Routes BOTH)
 ```
-User: "How is authentication implemented in our system?"
+User: "Explain transaction processing"
        ↓
-Router: BOTH
+Router: DOCS (primary)
        ↓
-Retrieves: Auth architecture (docs) + login function (code)
+Quality Check: INSUFFICIENT
        ↓
-Response: Combines architecture explanation + code examples
+Fallback: Add CODE results
+       ↓
+Retrieves: Architecture (docs) + TransactionProcessor class (code)
+       ↓
+Response: Combined explanation with examples
 ```
 
 ## Advanced Configuration
+
+### Model Selection
+
+**Available Models** (in order of quality/speed balance for M2/M3):
+
+| Model | Size | Speed | Quality | Best For | RAM |
+|-------|------|-------|---------|----------|-----|
+| **mistral** | 7B | ⚡⚡⚡ | ⭐⭐⭐⭐ | **Recommended** | 13GB |
+| phi | 2.7B | ⚡⚡⚡⚡ | ⭐⭐⭐ | Speed | 3GB |
+| llama3.1:8b | 8B | ⚡⚡⚡ | ⭐⭐⭐ | Balance | 13GB |
+| orca-mini | 7B | ⚡⚡⚡ | ⭐⭐⭐⭐ | Reasoning | 13GB |
+| gpt-oss:20b | 20B | ⚡⚡ | ⭐⭐⭐⭐ | Quality | 20GB+ |
+
+**Configure via CLI:**
+```bash
+streamlit run app.py -- --model mistral
+```
+
+**Configure via environment variable:**
+```bash
+export DEVSITE_MODEL=mistral
+streamlit run app.py
+```
+
+**Pull new models:**
+```bash
+ollama pull mistral
+ollama pull phi
+ollama pull llama3.1:8b
+ollama list  # See all available models
+```
 
 ### Adjusting Retrieval Parameters
 
@@ -213,21 +309,33 @@ chunk_size=800  # For docs (increase for longer documentation)
 chunk_size=1500  # For code (preserve function context)
 ```
 
-### Changing LLM Models
+### Fallback Routing Strategy
 
-**Use Ollama (local):**
-```python
-# In router_agent.py and app.py
-llm = ChatOllama(model="gpt-oss:20b")
-# Options: phi3:mini, llama3.1:8b, etc.
+The assistant uses intelligent fallback routing:
+
+1. **Route query** to primary source (DOCS/CODE)
+2. **Check quality** of retrieved results with LLM
+3. **If insufficient**, automatically fall back to secondary source
+4. **Combine results** for comprehensive answer
+
+**Example:**
+```
+User: "Explain transaction processing"
+  ↓
+Route: DOCS (architecture question)
+  ↓
+Retrieve: Documentation about transactions
+  ↓
+Quality: INSUFFICIENT (missing implementation details)
+  ↓
+Fallback: Search CODE for transaction processor
+  ↓
+Final route: DOCS+CODE
+  ↓
+Answer: Architecture + implementation examples
 ```
 
-**Use OpenAI:**
-```python
-from langchain_openai import ChatOpenAI
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-# Set OPENAI_API_KEY in .env
-```
+This ensures you always get the best answer by using multiple sources when needed.
 
 ## Features
 
@@ -254,18 +362,20 @@ python build_index.py --path ./data ~/github/architecture-docs ~/projects/wiki
 
 ```
 devsite-assistant/
-├── app.py                      # Main unified assistant (docs + code)
-├── build_index.py              # Documentation indexing script
-├── code_search_agent.py         # Code indexing script
-├── router_agent.py             # Query routing logic
-├── explore_chroma.py           # ChromaDB explorer tool
-├── requirements.txt            # Python dependencies
-├── .env                        # API keys (not in git)
+├── src/                        # Python source code
+│   ├── app.py                  # Main unified assistant (docs + code)
+│   ├── build_index.py          # Documentation indexing script
+│   ├── code_search_agent.py    # Code indexing script
+│   ├── router_agent.py         # Query routing logic
+│   └── explore_chroma.py       # ChromaDB explorer tool
 ├── data/                       # Documentation files
 │   ├── *.md
 │   └── *.mdx
 ├── chroma_db/                  # Documentation index
-└── chroma_db_code/             # Code search index
+├── chroma_db_code/             # Code search index
+├── requirements.txt            # Python dependencies
+├── .env                        # API keys (not in git)
+└── README.md                   # This file
 ```
 
 ## How It Works
@@ -275,30 +385,45 @@ devsite-assistant/
 ```
 User Question
     ↓
-Query Router (router_agent.py)
+Query Router (intelligent classification)
     ↓
+Primary Retrieval
     ├→ DOCS: Search documentation index
     ├→ CODE: Search code index
     └→ BOTH: Search both indexes
     ↓
-Retrieve Relevant Context
+Quality Check (LLM evaluates results)
     ↓
-Unified Prompt to LLM
+    ├→ SUFFICIENT: Use primary results
+    └→ INSUFFICIENT: Fallback to secondary source
     ↓
-Streamed Response with Attribution
+Combine Context (merge from multiple sources if needed)
+    ↓
+Generate Answer (with temperature=0 for grounding)
+    ↓
+Streamed Response with Citations & Attribution
 ```
 
 ### Routing Logic
 
 The router analyzes each question and decides:
 
-| Query Type | Route | Example |
-|-----------|-------|---------|
-| **How do I...** | DOCS | "How do I set up authentication?" |
-| **What does X do** | CODE | "What does the login function do?" |
-| **How is X implemented** | BOTH | "How is authentication implemented?" |
-| **Show me examples** | BOTH | "Show error handling patterns" |
-| **Architecture/Design** | DOCS | "What are the design principles?" |
+| Query Type | Primary Route | Fallback | Example |
+|-----------|-------|----------|---------|
+| **How do I...** | DOCS | CODE | "How do I set up authentication?" |
+| **What does X do** | CODE | DOCS | "What does the login function do?" |
+| **How is X implemented** | BOTH | - | "How is authentication implemented?" |
+| **Show me examples** | CODE | DOCS | "Show error handling patterns" |
+| **Architecture/Design** | DOCS | CODE | "What are the design principles?" |
+
+### Anti-Hallucination Measures
+
+1. **Temperature=0** - Deterministic responses (no randomness)
+2. **Strict Grounding Prompt** - Enforces citation requirements
+3. **Quality Checking** - Validates retrieved context before using
+4. **Context Transparency** - Shows what sources were used
+5. **Fallback Strategy** - Searches multiple sources if primary is insufficient
+6. **Citation Enforcement** - Forces model to cite [filename] for claims
 
 ### Processing Pipeline
 
@@ -322,8 +447,8 @@ The router analyzes each question and decides:
 ### "No indexes found"
 ```bash
 # Build both indexes
-python build_index.py --path ./data
-python code_search_agent.py --path /path/to/repo
+python src/build_index.py --path ./data
+python src/code_search_agent.py --path /path/to/repo
 ```
 
 ### "Connection refused" or "Ollama not responding"
@@ -338,7 +463,7 @@ pip install -r requirements.txt
 ```
 
 ### Poor answer quality
-1. Check what's being retrieved: run `explore_chroma.py`
+1. Check what's being retrieved: run `streamlit run src/explore_chroma.py`
 2. Increase retrieval count: 
    - For docs: `search_kwargs={"k": 12}` (default is 8)
    - For code: `search_kwargs={"k": 8}` (default is 5)
@@ -372,12 +497,14 @@ When adding features, consider:
 Potential enhancements:
 - [ ] Incremental indexing (update without rebuilding)
 - [ ] Persistent chat history (SQLite or similar)
-- [ ] Web UI for configuration
+- [ ] Web UI for configuration and model selection
 - [ ] Support for more languages (Rust, Kotlin, Swift, etc.)
-- [ ] Multi-language queries
-- [ ] Custom routing rules
-- [ ] Integration with Git history
+- [ ] Multi-language queries and documents
+- [ ] Custom routing rules via configuration
+- [ ] Integration with Git commit history for context
 - [ ] API endpoint for programmatic access
+- [ ] Hybrid search (vector + keyword)
+- [ ] Re-ranking for better retrieval quality
 
 ## License
 

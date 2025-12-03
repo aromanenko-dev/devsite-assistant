@@ -31,12 +31,5 @@ Response (one word only):"""
 )
 
 def route_query(question):
-    """Determine if query should go to docs, code, or both"""
-    prompt = ROUTER_PROMPT.format(question=question)
-    response = llm.invoke(prompt).content.strip().upper()
-    
-    # Ensure valid response
-    if response not in ["DOCS", "CODE", "BOTH"]:
-        response = "BOTH"  # Default to both if unclear
-    
-    return response
+    """Always use both docs and code for comprehensive answers"""
+    return "BOTH"
